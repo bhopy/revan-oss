@@ -1,0 +1,142 @@
+REVAN — Silent Decision Engine
+
+
+What is this?
+
+Revan is a local inference system that turns a large language model into a
+decision engine. It doesn't generate text. It reads a short prompt and gives
+back a structured answer — a tool name, a yes/no, a score, a classification —
+in 1-15 tokens. Everything runs on your machine. No cloud, no API keys.
+
+
+Where the idea came from
+
+I was running a 32B model on an RTX 2060 Super. At about 3 tokens per second,
+it's basically useless for writing — a paragraph takes 17+ seconds. I almost
+wrote it off as too slow to be practical.
+
+But then I realized: the model doesn't get dumber just because it's slow. It
+still understands the prompt just as well whether it writes one word or fifty.
+The bottleneck is generation, not comprehension. So what if it never had to
+write?
+
+Instead of trying to make a slow chatbot work, I stripped it down to just the
+decision-making. Constrain the output to 1-15 tokens, ask structured questions
+("which tool?" / "yes or no?" / "score 1-10"), and suddenly a 32B model on
+consumer hardware becomes genuinely useful. A yes/no answer comes back in 0.4
+seconds. Tool routing in 0.5 seconds. That's faster than most cloud APIs, and
+the data never leaves your machine.
+
+The constraint became the design. Don't fight the hardware, design around it.
+
+
+How it works
+
+Three pieces:
+
+The engine is a single-file C++ program (~1,350 lines) that loads the model,
+listens on a Windows Named Pipe, and runs inference. It links llama.cpp
+directly as a library — no server process, no HTTP. It has a built-in 3-slot
+LRU cache for system prompts and can hot-swap models without restarting.
+
+The hub is a Rust async program (~1,300 lines) that orchestrates everything.
+It manages agent processes, routes their requests to the engine, monitors GPU
+memory, and uses Windows Job Objects to guarantee everything cleans up on exit.
+
+Agents are child processes that talk to the hub via JSON Lines on stdin/stdout.
+They can be written in any language. A Python proof-of-concept is included that
+classifies files by asking Revan what type they are.
+
+The engine talks binary (20-byte headers, no parsing overhead). The hub talks
+async Rust. The agents talk JSON. Each piece does what its language is best at.
+About 2,800 lines total.
+
+
+Best use cases
+
+Tool routing — "Given this query, which tool handles it?" Response: 1 token,
+under 0.5 seconds. 100% accuracy on the test suite.
+
+Classification — Sentiment, intent, file type, error category. One-word
+answers at 0.4 seconds. A 32B model classifying a single word is more accurate
+than a 7B model writing a sentence about why it thinks something might be
+positive.
+
+Scoring and ranking — "Rate these 5 search results 1-10." Five numbers back
+in about 3 seconds. Good for retrieval pipelines where you need relevance
+scoring without sending data off-machine.
+
+Validation gates — "Is this correct? yes/no." Quick sanity checks in automated
+workflows. Prevents wasted downstream work.
+
+Multi-step agent workflows — Chain 5-10 decisions together. Route, search,
+score, verify, complete. Ten decisions in about 18 seconds, all local, all
+using 32B-level reasoning.
+
+Privacy-sensitive data — Medical, legal, financial. Nothing leaves the machine.
+
+Offline use — Air-gapped systems, field deployments, bad internet. No
+dependency on external services.
+
+
+When not to use it
+
+Text generation — 3 tok/s means 17+ seconds for 50 tokens. Use a cloud API or
+a faster small model.
+
+Open-ended questions — "What do you think about X?" has no bounded output.
+Revan needs structured, predictable answers.
+
+Cross-platform — Windows only. Named Pipes, Job Objects, and NVML are all
+Windows APIs. Porting is feasible but not done.
+
+Small GPUs — The 32B model needs ~5.6 GB for partial GPU offload. Under 6 GB
+of VRAM won't work. You can use a 7B or 3B model but lose accuracy.
+
+
+Pros
+
+- 32B reasoning on a $300 GPU
+- Sub-second for simple decisions
+- Completely local, no API costs
+- Stateless = constant-time regardless of workflow length
+- KV cache saves 48-60% on repeat prompts
+- Hot model swap without restart
+- Agents in any language (JSON Lines stdin/stdout)
+- Compact codebase (~2,800 lines)
+- Binary IPC with ~0.1ms overhead
+- Automatic process cleanup via Job Objects
+
+
+Cons
+
+- Windows only
+- Needs NVIDIA + CUDA
+- Text generation is unusably slow (by design)
+- Requires building llama.cpp from source
+- 32B model is ~18 GB download
+- KV cache is RAM-only, lost on restart
+- Hard cap at 15 tokens output
+- No REST API — Named Pipe or go through the hub
+
+
+Numbers
+
+Hardware: RTX 2060 Super (8 GB), Ryzen 5 5600X, 32 GB DDR4
+Model: OLMo 3.1 32B Instruct Q4_K_M, 23/64 layers on GPU
+
+  Yes/No:              ~0.4s (1 token)
+  Tool routing:        ~0.5s (1-2 tokens)
+  Score 5 items:       ~3.0s (5-9 tokens)
+  10-step workflow:    ~18s  (vs ~60s with context accumulation)
+  Prompt processing:   82-128 tok/s cold, up to 185 tok/s cached
+  Token generation:    3.23-3.31 tok/s
+  Cache savings:       48-60% on repeat system prompts
+
+
+The point
+
+Revan doesn't try to be a chatbot on weak hardware. It asks a different
+question: what if a large model never had to write? Turns out a 32B model
+that only decides is faster, more accurate, and more useful than a 7B model
+that tries to do everything. The limitation is the design.
