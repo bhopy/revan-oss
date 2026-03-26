@@ -1,0 +1,38 @@
+# Build artifacts
+/build/
+/hub/target/
+
+# Model files (too large for git)
+*.gguf
+
+# Pre-compiled libraries (users build their own)
+/bin_lib/lib/
+/bin_lib/llama.cpp/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Test results
+*_results.json
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# OS
+desktop.ini
+Thumbs.db
+.DS_Store
+
+# Caches
+.cache/
+.claude/
+
+# Credentials
+.mcp.json
+*.secret
+*.key
