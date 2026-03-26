@@ -1,117 +1,168 @@
 # Building Revan
 
-You need Windows 10/11, an NVIDIA GPU, and about 15 minutes.
+Full walkthrough from zero to running. Takes about 15 minutes if nothing goes wrong.
 
-## What you need installed
+**You'll need:**
 
-- **CUDA Toolkit 12.x** — https://developer.nvidia.com/cuda-downloads
-- **Visual Studio 2019+** with the "Desktop development with C++" workload
-- **CMake 3.18+** — https://cmake.org/download/
-- **Rust** — https://rustup.rs/
-- **Python 3.10+** — for the agents and benchmark scripts
-- **Git** — to clone llama.cpp
+- Windows 10 or 11
+- An NVIDIA GPU (any modern one with CUDA support)
+- [CUDA Toolkit 12.x](https://developer.nvidia.com/cuda-downloads) installed
+- [Visual Studio 2019 or 2022](https://visualstudio.microsoft.com/) with the **"Desktop development with C++"** workload checked
+- [CMake 3.18+](https://cmake.org/download/)
+- [Rust](https://rustup.rs/)
+- [Python 3.10+](https://www.python.org/) (for the agents and test scripts)
+- [Git](https://git-scm.com/)
 
+Everything below assumes you're running commands from a terminal that has your compiler and CUDA in PATH. The easiest way is to open the **"Developer Command Prompt for VS"** or just a regular terminal if you've got everything on your system PATH already.
 
-## 1. Build llama.cpp
+---
 
-Revan links llama.cpp as a static library. It doesn't use llama-server or HTTP at all.
+## Step 1 — Build llama.cpp as static libraries
 
-```bash
+Revan doesn't use llama-server or any HTTP API. It links llama.cpp directly as a C++ library inside its own process. So you need to build llama.cpp from source and grab the `.lib` files it produces.
+
+**Clone and checkout the tested version:**
+
+```
 git clone https://github.com/ggerganov/llama.cpp.git
 cd llama.cpp
 git checkout b8067
 ```
 
-b8067 is the tested version. Newer builds may work but I haven't verified them.
+> `b8067` is the version everything was built and tested against. Newer versions might work fine, but no guarantees.
 
-```bash
-mkdir build && cd build
-cmake .. -G "Visual Studio 16 2019" -A x64 \
-  -DGGML_CUDA=ON \
-  -DCMAKE_CUDA_ARCHITECTURES=75 \
-  -DBUILD_SHARED_LIBS=OFF
+**Figure out your CUDA architecture:**
 
+This tells the compiler which GPU instruction set to target. If you pick the wrong one, CUDA won't run on your card.
+
+| Architecture | GPUs                       | Value |
+| ------------ | -------------------------- | ----- |
+| Turing       | RTX 2060, 2070, 2080       | `75`  |
+| Ampere       | RTX 3060, 3070, 3080       | `86`  |
+| Ada Lovelace | RTX 4060, 4070, 4080, 4090 | `89`  |
+
+Not sure which one you have? Run `nvidia-smi` — it shows your GPU name right at the top.
+
+**Configure and build:**
+
+```
+mkdir build
+cd build
+cmake .. -G "Visual Studio 17 2022" -A x64 -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=75 -DBUILD_SHARED_LIBS=OFF
 cmake --build . --config Release
 ```
 
-Change `CMAKE_CUDA_ARCHITECTURES` to match your GPU:
-- `75` — Turing (RTX 2060, 2070, 2080)
-- `86` — Ampere (RTX 3060, 3070, 3080)
-- `89` — Ada (RTX 4060, 4070, 4080)
+> If you're on Visual Studio 2019, change the generator to `"Visual Studio 16 2019"` instead.
+>
+> Replace `75` with whatever matches your GPU from the table above.
 
-Run `nvidia-smi` if you're not sure what you have.
+This takes a few minutes. When it's done, you'll have a bunch of `.lib` files inside `build/Release/` (or scattered in subfolders). Those are what Revan needs.
 
-Once it builds, copy the output into the Revan project:
+---
 
-```bash
-cd revan-oss
-mkdir -p bin_lib/lib bin_lib/include
+## Step 2 — Copy the llama.cpp output into Revan
 
-# Libraries
-cp /path/to/llama.cpp/build/Release/llama.lib     bin_lib/lib/
-cp /path/to/llama.cpp/build/Release/common.lib     bin_lib/lib/
-cp /path/to/llama.cpp/build/Release/ggml.lib       bin_lib/lib/
-cp /path/to/llama.cpp/build/Release/ggml-base.lib  bin_lib/lib/
-cp /path/to/llama.cpp/build/Release/ggml-cpu.lib   bin_lib/lib/
-cp /path/to/llama.cpp/build/Release/ggml-cuda.lib  bin_lib/lib/
+Revan expects the compiled libraries and headers in a `bin_lib/` folder at the project root. You need to create that folder and copy everything into it.
 
-# Headers
-cp /path/to/llama.cpp/include/llama.h  bin_lib/include/
-cp /path/to/llama.cpp/include/ggml.h   bin_lib/include/
-cp /path/to/llama.cpp/common/common.h  bin_lib/include/
+**Create the folder structure:**
+
+```
+cd path/to/revan-oss
+mkdir bin_lib\lib
+mkdir bin_lib\include
 ```
 
-If you get missing header errors later, grab whatever else `revan.cpp` asks for from the llama.cpp source tree.
+**Copy the libraries** (6 `.lib` files from your llama.cpp build):
 
+```
+copy path\to\llama.cpp\build\Release\llama.lib bin_lib\lib\
+copy path\to\llama.cpp\build\Release\common.lib bin_lib\lib\
+copy path\to\llama.cpp\build\Release\ggml.lib bin_lib\lib\
+copy path\to\llama.cpp\build\Release\ggml-base.lib bin_lib\lib\
+copy path\to\llama.cpp\build\Release\ggml-cpu.lib bin_lib\lib\
+copy path\to\llama.cpp\build\Release\ggml-cuda.lib bin_lib\lib\
+```
 
-## 2. Build the engine
+**Copy the headers** (2 `.h` files the engine needs):
 
-```bash
-cd revan-oss
-mkdir build && cd build
-cmake .. -G "Visual Studio 16 2019" -A x64
+```
+copy path\to\llama.cpp\include\llama.h bin_lib\include\
+copy path\to\llama.cpp\include\ggml.h bin_lib\include\
+```
+
+> Replace `path\to\llama.cpp` with wherever you actually cloned it. For example, if you cloned to `C:\Dev\llama.cpp`, it would be `C:\Dev\llama.cpp\build\Release\llama.lib`.
+>
+> If the `.lib` files aren't directly in `build/Release/`, check subfolders like `build/src/Release/` or `build/ggml/src/Release/` — llama.cpp moves things around between versions.
+
+---
+
+## Step 3 — Build the Revan engine
+
+This compiles the C++ decision engine (`src/revan.cpp`) into a standalone `.exe` that loads your model and listens for requests on a Named Pipe.
+
+**Before you build** — if your GPU is NOT an RTX 2060/2070/2080 (Turing), open `CMakeLists.txt` and change this line:
+
+```cmake
+set(CMAKE_CUDA_ARCHITECTURES 75)
+```
+
+Set it to `86` for RTX 30-series or `89` for RTX 40-series (same values from the table in Step 1).
+
+**Build it:**
+
+```
+cd path/to/revan-oss
+mkdir build
+cd build
+cmake .. -G "Visual Studio 17 2022" -A x64
 cmake --build . --config Release
 ```
 
-Output: `build/Release/revan.exe`
+> Again, use `"Visual Studio 16 2019"` if that's what you have.
 
-If cmake complains about missing headers or libs, double-check that `bin_lib/include/` and `bin_lib/lib/` have everything from step 1.
+When it finishes, you'll get `build/Release/revan.exe`. That's the engine.
 
+If CMake complains about missing headers or libraries, double-check that `bin_lib/include/` has `llama.h` and `ggml.h`, and `bin_lib/lib/` has all 6 `.lib` files from Step 2.
 
-## 3. Build the hub
+---
 
-```bash
-cd revan-oss/hub
+## Step 4 — Build the hub
+
+The hub is the Rust program that manages everything — it spawns agent processes, routes their requests to the engine, and monitors your GPU memory.
+
+```
+cd path/to/revan-oss/hub
 cargo build --release
 ```
 
-Output: `hub/target/release/revan-hub.exe`
+Cargo downloads and compiles all dependencies automatically. Nothing to configure. When it's done you'll get `hub/target/release/revan-hub.exe`.
 
-Cargo pulls all dependencies automatically. Nothing special here.
+---
 
+## Step 5 — Download a model
 
-## 4. Get a model
-
-Any GGUF model works. I built and tested with OLMo 3.1 32B Instruct (Q4_K_M), which is ~18 GB:
+Revan works with any GGUF-format model. It was built and benchmarked with **OLMo 3.1 32B Instruct Q4_K_M** (~18 GB download):
 
 https://huggingface.co/allenai/OLMo-2-0325-32B-Instruct-GGUF
 
-If you want something smaller to test with first, Llama 3.2 3B (~1.9 GB) works too:
+If you want something smaller to get going quick, **Llama 3.2 3B** (~1.9 GB) works too:
 
 https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF
 
-Put the .gguf file wherever you want.
+Download the `.gguf` file and put it wherever makes sense. You'll point the config at it in the next step.
 
+---
 
-## 5. Configure
+## Step 6 — Configure
 
-Copy the example config and set your model path:
+**Engine config** — copy the example and fill in your model path:
 
-```bash
-cp revan.toml.example revan.toml
+```
+cd path/to/revan-oss
+copy revan.toml.example revan.toml
 ```
 
-Edit `revan.toml`:
+Open `revan.toml` and set it up:
 
 ```toml
 [model]
@@ -119,61 +170,82 @@ path = "C:/Models/your-model-Q4_K_M.gguf"
 n_gpu_layers = 23
 ctx_size = 2048
 n_threads = 6
+
+[pipe]
+name = \\.\pipe\revan
+
+[inference]
+n_predict_max = 15
+temperature_default = 0.1
 ```
 
-`n_gpu_layers` depends on your VRAM. For 32B Q4_K_M:
-- 6 GB VRAM → 15-18 layers
-- 8 GB VRAM → 20-25 layers
-- 12 GB VRAM → 38-45 layers
-- 16 GB+ → 64 (everything on GPU)
+**What each setting does:**
 
-For 7B or 3B models, just set it to 99 — the whole thing fits.
+- **`path`** — Full path to your `.gguf` model file. Use forward slashes.
+- **`n_gpu_layers`** — How many of the model's layers to put on your GPU. More layers = faster, but uses more VRAM. Here's a rough guide for the 32B model (64 layers total):
+  - 6 GB VRAM → `15` to `18` layers
+  - 8 GB VRAM → `20` to `25` layers
+  - 12 GB VRAM → `38` to `45` layers
+  - 16+ GB VRAM → `64` (everything on GPU)
+  - For 3B or 7B models, just set it to `99` — the whole model fits easily.
+- **`ctx_size`** — Context window in tokens. `2048` is plenty since Revan prompts are small (150-250 tokens).
+- **`n_threads`** — Number of CPU threads for inference. Set this to your **physical** core count, not the logical/hyperthread count. Example: a 6-core/12-thread CPU → set `6`.
+- **`name`** (under `[pipe]`) — The Windows Named Pipe path. Leave this as-is unless you have a reason to change it.
+- **`n_predict_max`** — Hard ceiling on output tokens. `15` is the design limit. Don't raise this unless you know what you're doing.
+- **`temperature_default`** — How random the model's answers are. `0.1` keeps things deterministic, which is what you want for decisions.
 
-`n_threads` should be your physical core count. Don't count hyperthreads.
+**Hub config** — `hub.toml` ships ready to go. You don't need to touch it unless you changed the pipe name in `revan.toml`.
 
-`hub.toml` ships ready to use. You shouldn't need to change it unless you renamed the pipe.
+---
 
+## Step 7 — Run it
 
-## 6. Run it
+You need three terminals open. One for the engine, one for the hub, and one to actually do stuff.
 
-Three terminals:
+**Terminal 1 — Start the engine:**
 
-**Engine:**
-```bash
-cd revan-oss
-./build/Release/revan.exe
+```
+cd path/to/revan-oss
+build\Release\revan.exe
 ```
 
-**Hub:**
-```bash
-cd revan-oss
-./hub/target/release/revan-hub.exe
+You should see it load the model and print something like "listening on pipe". That means it's ready.
+
+**Terminal 2 — Start the hub:**
+
+```
+cd path/to/revan-oss
+hub\target\release\revan-hub.exe
 ```
 
-**Test:**
-```bash
-cd revan-oss
+The hub connects to the engine's pipe and starts its interactive prompt.
+
+**Terminal 3 — Run the benchmarks:**
+
+```
+cd path/to/revan-oss
 python tools/bench_revan.py
 ```
 
-The benchmark runs yes/no, tool routing, and scoring tests. You'll see per-request timing and throughput numbers.
+This fires off yes/no, tool routing, and scoring tests against the engine. You'll see per-request timing and throughput numbers. If everything's wired up right, yes/no answers come back in ~0.4 seconds.
 
+---
 
 ## Hub commands
 
-Once the hub is running, type `help`:
+Once the hub is running, you get an interactive prompt. Type `help` to see everything:
 
-```
-help                              — show commands
-status                            — running agents + VRAM usage
-health                            — ping the engine
-spawn <name>                      — start an agent from hub.toml
-stop <name>                       — kill a running agent
-dispatch <agent> <action> <json>  — send a task and wait for the result
-quit                              — shut everything down
-```
+| Command                            | What it does                                       |
+| ---------------------------------- | -------------------------------------------------- |
+| `help`                             | Shows all available commands                       |
+| `status`                           | Lists running agents and current VRAM usage        |
+| `health`                           | Pings the engine to check if it's alive            |
+| `spawn <name>`                     | Starts an agent defined in `hub.toml`              |
+| `stop <name>`                      | Kills a running agent                              |
+| `dispatch <agent> <action> <json>` | Sends a task to an agent and waits for the result  |
+| `quit`                             | Shuts down the hub, engine, and all agents cleanly |
 
-Example session:
+**Quick example session:**
 
 ```
 > spawn file_scanner
@@ -185,45 +257,48 @@ waiting for result...
 result: status=ok, data={"category":"config","gen_ms":362}
 ```
 
+---
 
-## Verifying the KV cache
+## Extra tools
 
-```bash
+**KV cache validation** — sends the same system prompt multiple times and checks that the second+ requests are faster (cache hit). You should see 48-60% time savings:
+
+```
 python tools/test_kv_cache.py
 ```
 
-This sends the same system prompt multiple times and checks that prompt processing gets faster after the first request (cache hit). You should see 48-60% savings.
+**Quantization A/B testing** — compare accuracy and speed between two different model quantizations:
 
-
-## Comparing quantizations
-
-```bash
-python tools/quant_ab_test.py --tag q4km     # run with model A
-# swap models, then:
-python tools/quant_ab_test.py --tag iq4xs    # run with model B
-python tools/quant_ab_test.py --compare      # side-by-side results
+```
+python tools/quant_ab_test.py --tag q4km
 ```
 
+Then swap your model in `revan.toml`, restart the engine, and run:
+
+```
+python tools/quant_ab_test.py --tag iq4xs
+python tools/quant_ab_test.py --compare
+```
+
+---
 
 ## Troubleshooting
 
-**`Cannot connect (error 2)`** — The engine isn't running. Start `revan.exe` first.
+| Problem                          | What's happening                             | Fix                                                                                                                            |
+| -------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `Cannot connect (error 2)`       | Engine isn't running                         | Start `revan.exe` first, then the hub                                                                                          |
+| `Cannot connect (error 231)`     | Pipe is busy (another request is mid-flight) | Wait a sec and try again                                                                                                       |
+| Garbage output from inference    | Model expects a different prompt format      | Revan uses ChatML (`<\|im_start\|>`). OLMo uses this natively. If you're using a different model, check what template it needs |
+| Slow prompt processing           | Not enough layers on GPU                     | Bump `n_gpu_layers` in `revan.toml`, watch VRAM with `nvidia-smi`                                                              |
+| CUDA out of memory               | Too many layers on GPU                       | Lower `n_gpu_layers` in `revan.toml`                                                                                           |
+| Hub can't find `hub.toml`        | Wrong working directory                      | Run the hub from the project root (`revan-oss/`)                                                                               |
+| Agent spawns but nothing happens | Agent crashed silently                       | Check stderr output in the hub's terminal — agent errors get forwarded there                                                   |
+| CMake can't find CUDA            | `nvcc` not in PATH                           | Make sure the CUDA Toolkit bin folder is on your system PATH                                                                   |
 
-**`Cannot connect (error 231)`** — Pipe is busy. Another request is in progress. Wait a moment.
+---
 
-**Garbage output from inference** — Your model probably doesn't use ChatML format (`<|im_start|>`). OLMo does. If you're using a different model, check its expected prompt template.
+## Platform
 
-**Slow prompt processing** — Not enough layers on GPU. Bump `n_gpu_layers` in `revan.toml` and watch VRAM with `nvidia-smi`.
+This is Windows-only. The engine uses Named Pipes for IPC, the hub uses Job Objects for process cleanup, and VRAM monitoring uses NVML — all Windows APIs.
 
-**CUDA out of memory** — Too many layers on GPU. Lower `n_gpu_layers`.
-
-**Hub can't find hub.toml** — Run it from the project root directory.
-
-**Agent spawns but nothing happens** — Check stderr. Agent errors are forwarded to the hub's terminal output.
-
-**cmake can't find CUDA** — Make sure `nvcc` is in your PATH after installing the CUDA Toolkit.
-
-
-## Platform note
-
-This is Windows-only. The engine uses Named Pipes, the hub uses Job Objects for process cleanup, VRAM monitoring uses NVML — all Windows APIs. Porting to Linux would mean swapping Named Pipes for Unix sockets and Job Objects for process groups. NVML itself works fine on Linux.
+Porting to Linux would mean replacing Named Pipes with Unix domain sockets and Job Objects with process groups. NVML itself works cross-platform, so that part's fine.
