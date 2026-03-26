@@ -1,0 +1,15 @@
+# Revan Engine Configuration
+# Copy this to revan.toml and edit the model path.
+
+[model]
+path = "path/to/your-model-Q4_K_M.gguf"
+n_gpu_layers = 23      # Adjust for your GPU VRAM (see BUILD.md)
+ctx_size = 2048
+n_threads = 6           # Set to your physical CPU core count
+
+[pipe]
+name = \\.\pipe\revan
+
+[inference]
+n_predict_max = 15
+temperature_default = 0.1
