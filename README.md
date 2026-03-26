@@ -1,4 +1,4 @@
-# Revan
+# revan-oss // lowkey gold
 
 A stateless decision engine that runs a 32B language model on consumer hardware.
 
