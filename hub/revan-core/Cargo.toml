@@ -1,0 +1,23 @@
+# revan-core — Protocol types, binary codec, pipe client, agent message types
+
+[package]
+name = "revan-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_Foundation",
+    "Win32_Security",
+] }
+
+[dev-dependencies]

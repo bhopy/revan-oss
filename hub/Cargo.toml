@@ -1,0 +1,6 @@
+# Revan Hub — Rust workspace root
+# The orchestrator that connects Revan's C++ brain to polyglot agents.
+
+[workspace]
+members = ["revan-core", "revan-hub"]
+resolver = "2"
