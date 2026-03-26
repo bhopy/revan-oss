@@ -49,7 +49,7 @@ static constexpr int REQUEST_HEADER_SIZE  = 20;  // 20 bytes (with system prompt
 static constexpr int RESPONSE_HEADER_SIZE = 24;  // 24 bytes fixed
 
 // ==================== HARDCODED PARAMETERS ====================
-// These never change — proven by benchmark and confirmed in REVAN-MASTER.md
+// These never change — proven by benchmark across multiple model sizes
 
 static constexpr int   BATCH_SIZE         = 2048;
 static constexpr int   UBATCH_SIZE        = 512;

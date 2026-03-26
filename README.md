@@ -15,7 +15,6 @@ Output: "calculator"  (1 token, 0.4 seconds)
 
 The whole thing is stateless by design. The engine doesn't track history or accumulate context. Whatever calls it (an agent, a script, a pipeline) holds the state and feeds Revan a small question each time. That keeps every call constant-time — the 10th decision in a workflow is just as fast as the 1st.
 
-
 ## Architecture
 
 Three layers:
@@ -33,7 +32,7 @@ Three layers:
         |
         |  tiny answer out (1-15 tokens)
         v
-  Hub (Rust, ~1300 lines)
+  Hub (Rust, ~2100 lines)
   - async orchestrator (Tokio)
   - spawns/manages agent processes
   - routes agent "think" requests to the engine
@@ -48,14 +47,14 @@ Three layers:
   - send "result" when done
 ```
 
-About 2,800 lines total across C++, Rust, and Python.
-
+About 3,500 lines total across C++, Rust, and Python.
 
 ## Performance
 
 All numbers from an RTX 2060 Super (8 GB), OLMo 3.1 32B Instruct Q4_K_M, 23/64 layers on GPU.
 
 **Decision speed:**
+
 - Yes/No → 1 token, ~0.4s, 100% accuracy (8/8 test cases)
 - Tool routing → 1-2 tokens, ~0.5s, 100% accuracy (8/8)
 - Sentiment → 1 token, ~0.4s
@@ -63,20 +62,22 @@ All numbers from an RTX 2060 Super (8 GB), OLMo 3.1 32B Instruct Q4_K_M, 23/64 l
 - File classification → 1 token, ~0.5s, 97% (29/30)
 
 **Throughput:**
+
 - Prompt processing: 82-128 tok/s cold, up to 185 tok/s with cache hits
 - Generation: 3.23-3.31 tok/s
 
 **KV cache savings** (same system prompt, repeat calls):
+
 - Yes/No prompts: 4,746ms → ~1,893ms (60% faster)
 - Routing prompts: 3,198ms → ~1,700ms (48% faster)
 - Scoring prompts: 2,356ms → 1,203ms (49% faster)
 
 **Multi-step workflows** stay fast because prompts don't grow:
+
 - 1-2 decisions: 1-3 seconds
 - 3 decisions: ~5 seconds
 - 5 decisions: ~11 seconds
 - 10 decisions: ~18 seconds (would be ~60s if context accumulated)
-
 
 ## Comparisons
 
@@ -85,7 +86,6 @@ All numbers from an RTX 2060 Super (8 GB), OLMo 3.1 32B Instruct Q4_K_M, 23/64 l
 **vs. smaller local models (7B, 3B)** — A 32B model constrained to 1-15 tokens is more accurate than a 7B model generating 50+ tokens, and wall-clock time is similar because the output is so short. The 7B is better if you actually need text generation.
 
 **vs. llama-server directly** — Revan links llama.cpp as a library instead of running it as a server. Named Pipe IPC is ~0.1ms overhead vs 1-5ms for HTTP. Built-in KV cache is tuned for repeated system prompts. Hot model swap without restart. The tradeoff is it's Windows-only and less portable.
-
 
 ## What it's good at
 
@@ -104,7 +104,6 @@ All numbers from an RTX 2060 Super (8 GB), OLMo 3.1 32B Instruct Q4_K_M, 23/64 l
 - Summarization. Output length is unbounded.
 - Conversation. It's a brain, not a chatbot.
 - Anything needing more than ~15 tokens of output.
-
 
 ## Project structure
 
@@ -127,7 +126,6 @@ tools/
   test_kv_cache.py             Cache validation
 ```
 
-
 ## Setup
 
 See [BUILD.md](BUILD.md) for the full walkthrough. Short version:
@@ -139,12 +137,12 @@ See [BUILD.md](BUILD.md) for the full walkthrough. Short version:
 5. Download a GGUF model, edit `revan.toml`
 6. Start engine, start hub, run benchmarks
 
-
 ## Protocol
 
 The engine uses a binary protocol over Windows Named Pipes. 20-byte request header, 24-byte response header, everything little-endian. No HTTP, no JSON on the wire.
 
 Request types:
+
 - `0x0001` — inference (V1)
 - `0x0002` — health check
 - `0x0003` — shutdown
@@ -152,6 +150,7 @@ Request types:
 - `0x0005` — hot model swap
 
 Agents talk to the hub via JSON Lines on stdin/stdout:
+
 ```
 Hub  → Agent:  {"type":"task", "id":"...", "action":"classify", "payload":{...}}
 Agent → Hub:   {"type":"think", "id":"...", "system":"...", "user":"...", "max_tokens":5}
@@ -160,7 +159,6 @@ Agent → Hub:   {"type":"result", "id":"...", "status":"ok", "data":{...}}
 ```
 
 Agents can be written in any language.
-
 
 ## Writing an agent
 
@@ -197,7 +195,6 @@ for line in sys.stdin:
 
 Register in `hub.toml`, then `spawn` and `dispatch` from the hub CLI.
 
-
 ## Design notes
 
 **Stateless** — If the engine tracked history, prompts would grow from 200 to 1000+ tokens over a multi-step workflow. At 82-128 tok/s that turns a 0.75s read into 5+ seconds by step 10. Keeping prompts flat means constant-time calls.
@@ -212,10 +209,10 @@ Register in `hub.toml`, then `spawn` and `dispatch` from the hub CLI.
 
 **Hot model swap** — Swaps models via request type `0x0005` without killing the process. Saves ~26 seconds of cold-start.
 
-
 ## Hardware
 
 Built and tested on:
+
 - AMD Ryzen 5 5600X, 32 GB DDR4-3200
 - RTX 2060 Super (8 GB VRAM)
 - NVMe SSD, Windows 11, CUDA 12.4
@@ -225,13 +222,11 @@ VRAM breakdown: ~4.2 GB model (23 layers), ~0.4 GB KV cache, ~5.4 MB system prom
 
 Works with any GGUF model. Tested with OLMo 3.1 32B, Llama 3.2 3B, and Mistral 7B. Bigger models at Q4_K_M give better decision accuracy than smaller models at higher precision.
 
-
 ## Status
 
 The engine, hub, and protocol work. The file_scanner agent demonstrates the full think → thought → result chain end to end. 22 unit tests cover the protocol codec.
 
 What's left to build: real-world agents for actual tasks, persistent KV cache that survives restarts, configurable cache slots, agent-to-agent routing.
-
 
 ## License
 
