@@ -1,0 +1,23 @@
+# Revan Hub Configuration
+# Controls how the Rust hub connects to the C++ engine and manages agents.
+
+[revan]
+pipe = "\\\\.\\pipe\\revan"
+health_check_interval_secs = 30
+request_timeout_secs = 10
+
+[monitor]
+vram_poll_interval_secs = 5
+vram_warn_threshold_percent = 95
+
+# Agents — polyglot child processes communicating via JSON Lines on stdin/stdout.
+# Set auto_start = true to launch automatically when the hub starts.
+
+[agents.file_scanner]
+command = "python"
+args = ["agents/python/file_scanner.py"]
+description = "Classifies files by content using Revan"
+auto_start = false
+
+[agents.file_scanner.env]
+PYTHONIOENCODING = "utf-8"
